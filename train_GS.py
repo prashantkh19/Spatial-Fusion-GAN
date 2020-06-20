@@ -8,27 +8,17 @@ from PIL import Image
 import torch
 
 from models import Generator, Discriminator, GeometrySynthesizer
-from utils import ReplayBuffer, LambdaLR, Logger, weights_init_normal, set_requires_grad, tensor2image, dotDict
+from utils import ReplayBuffer, LambdaLR, Logger, weights_init_normal, set_requires_grad, tensor2image, dotDict, save_ckp, load_ckp
 from datasets import MyDataset, TextUtils
 from loss import *
 import matplotlib.pyplot as plt
 import os
 
-global G0, G1, G2, D1, D2
-
-def is_training(isG0=False, isG1=False, isG2=False, isD1=False, isD2=False):
-    global G0, G1, G2, D1, D2
-    set_requires_grad(G0, isG0)
-    # set_requires_grad(G1, isG0)
-    # set_requires_grad(G2, isG0)
-    # set_requires_grad(D1, isG0)
-    set_requires_grad(D2, isG0)
-
 def train(opt):
     opt = dotDict(opt)
 
-    if not os.path.exists(os.path.join(opt.checkpoints_dir, opt.run_name)):
-        os.makedirs(os.path.join(opt.checkpoints_dir, opt.run_name))
+    if not os.path.exists(opt.checkpoints_dir):
+        os.makedirs(opt.checkpoints_dir)
 
     if not os.path.exists(os.path.join(opt.out_dir, opt.run_name)):
         os.makedirs(os.path.join(opt.out_dir, opt.run_name))
@@ -38,36 +28,23 @@ def train(opt):
 
     ###### Definition of variables ######
     # Networks
-    global G0, G1, G2, D1, D2
     G0 = GeometrySynthesizer()
-    # G1 = Generator(opt.input_nc, opt.output_nc)
-    # G2 = Generator(opt.input_nc, opt.output_nc)
-    # D1 = Discriminator(opt.input_nc)
     D2 = Discriminator(opt.output_nc)
 
     if opt.cuda:
         G0.cuda()
-        # G1.cuda()
-        # G2.cuda()
-        # D1.cuda()
         D2.cuda()
 
-    # G1.apply(weights_init_normal)
-    # G2.apply(weights_init_normal)
     D2.apply(weights_init_normal)
-    # D1.apply(weights_init_normal)
 
     # Optimizers & LR schedulers
     optimizer_G0 = torch.optim.Adam(G0.parameters(), lr=opt.lr, betas=(0.5, 0.999))
-    # optimizer_G1 = torch.optim.Adam(G1.parameters(), lr=opt.lr, betas=(0.5, 0.999))
-    # optimizer_G2 = torch.optim.Adam(G2.parameters(), lr=opt.lr, betas=(0.5, 0.999))
-    # optimizer_D1 = torch.optim.Adam(D1.parameters(), lr=opt.lr, betas=(0.5, 0.999))
     optimizer_D2 = torch.optim.Adam(D2.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
+    if opt.resume_checkpoint is not None:
+        opt.epoch, G0, D2, optimizer_G0, optimizer_D2 = load_ckp(opt.resume_checkpoint, G0, D2, optimizer_G0, optimizer_D2) 
+
     lr_scheduler_G0 = torch.optim.lr_scheduler.LambdaLR(optimizer_G0, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
-    # lr_scheduler_G1 = torch.optim.lr_scheduler.LambdaLR(optimizer_G1, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
-    # lr_scheduler_G2 = torch.optim.lr_scheduler.LambdaLR(optimizer_G2, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
-    # lr_scheduler_D1 = torch.optim.lr_scheduler.LambdaLR(optimizer_D1, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
     lr_scheduler_D2 = torch.optim.lr_scheduler.LambdaLR(optimizer_D2, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 
     # Inputs & targets memory allocation
@@ -82,7 +59,8 @@ def train(opt):
     composed_buffer = ReplayBuffer()
 
     # Dataset loader
-    transforms_dataset = [ transforms.Resize(int(opt.size*1.12), Image.BICUBIC), 
+    transforms_dataset = [ 
+                    transforms.Resize(int(opt.size*1.12), Image.BICUBIC), 
                     transforms.RandomCrop(opt.size), 
                     transforms.ToTensor(),
                     # transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
@@ -97,7 +75,7 @@ def train(opt):
     dataloader = DataLoader(dataset, batch_size=opt.batchSize, shuffle=True, num_workers=opt.n_cpu)
 
     # Loss plot
-    logger = Logger(opt.n_epochs, len(dataloader), os.path.join(opt.out_dir, opt.run_name))
+    logger = Logger(opt.n_epochs, len(dataloader), os.path.join(opt.out_dir, opt.run_name), opt.epoch+1)
     ###################################
 
     ###### Training ######
@@ -105,40 +83,39 @@ def train(opt):
         for i, batch in enumerate(dataloader):
             # Set model input
             background = Variable(background_t.copy_(batch['X']), requires_grad=True)
+            # foreground = Variable(foregound_t.copy_(batch['Y']), requires_grad=True)
+            real = Variable(real_t.copy_(batch['Z']), requires_grad=True)
             foreground = Variable(foregound_t.copy_(text.get_text_masks(opt.batchSize)), requires_grad=True)
-            real = Variable(real_t.copy_(batch['Y']), requires_grad=True)
 
             ###### Geometric Synthesizer ######
             composed = G0(background, foreground) # concatenate background and foreground object 
             
             ## optimize G0 loss
-            is_training(isG0 = True)
             optimizer_G0.zero_grad()
 
             loss_G0 = criterion_discriminator(D2(composed), target_real)
+            
             loss_G0.backward()
             optimizer_G0.step()
             
             ## optimize D2 Geometry loss
-            is_training(isD2 = True)
             optimizer_D2.zero_grad()
 
             # real loss
             loss_D2_real = criterion_discriminator(D2(real), target_real)
             # composed loss
-            composed = composed_buffer.push_and_pop(composed) 
-            loss_D2_composed  = criterion_discriminator(D2(composed), target_fake)
-
+            new_composed = composed_buffer.push_and_pop(composed)
+            loss_D2_composed  = criterion_discriminator(D2(new_composed), target_fake)
+            
             loss_D2 = (loss_D2_real + loss_D2_composed) * 0.5
-            loss_D2.backward(retain_graph=True)
-            optimizer_D2.step()
+
+            if i % 5 == 0:
+                loss_D2.backward()
+                optimizer_D2.step()
 
             # Progress report (http://localhost:8097)
             losses = {
                 'loss_G0': loss_G0,
-                # 'total_loss_G1': total_loss_G1,
-                # 'total_loss_G2': total_loss_G2,
-                # 'loss_D1': loss_D1,
                 'loss_D2': loss_D2
                 } 
             images = {
@@ -152,17 +129,21 @@ def train(opt):
 
         # Update learning rates
         lr_scheduler_G0.step()
-        # lr_scheduler_G1.step()
-        # lr_scheduler_G2.step()
-        # lr_scheduler_D1.step()
         lr_scheduler_D2.step()
 
         # Save models checkpoints
-        torch.save(G0.state_dict(), os.path.join(opt.checkpoints_dir, opt.run_name, 'G0.pth'))
-        # torch.save(G1.state_dict(), os.path.join(opt.checkpoints_dir, opt.run_name, 'G1.pth'))
-        # torch.save(G2.state_dict(), os.path.join(opt.checkpoints_dir, opt.run_name, 'G2.pth'))
-        # torch.save(D1.state_dict(), os.path.join(opt.checkpoints_dir, opt.run_name, 'D1.pth'))
-        torch.save(D2.state_dict(), os.path.join(opt.checkpoints_dir, opt.run_name, 'D2.pth'))
+        checkpoint = {
+            'epoch': epoch+1,
+            'state_dict': {
+                "G0": G0.state_dict(),
+                "D2": D2.state_dict()
+            },
+            'optimizer': {
+                "G0": optimizer_G0.state_dict(),
+                "D2": optimizer_D2.state_dict()
+            }
+        }
+        save_ckp(checkpoint, os.path.join(opt.checkpoints_dir, opt.run_name + '.pth'))
     ###################################
 
 if __name__ == "__main__": 
@@ -181,9 +162,9 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoints_dir', type=str, default='/checkpoints/', help='checkpoints output directory')
     parser.add_argument('--out_dir', type=str, default='/output/', help='output directory')
     parser.add_argument('--run_name', type=str, default='initial', help='experiment run name')
+    parser.add_argument('--resume_checkpoint', type=str, default=None, help='resume checkpoint path')
     opt = parser.parse_args()
 
     opt = vars(opt)
     print(opt)
     train(opt)
-

@@ -8,7 +8,6 @@ from torch.autograd import Variable
 import tps
 from cv2.ximgproc import guidedFilter
 import torchvision.transforms as transforms
-from tps_gen import *
 
 def composer(bg_img, transformed_obj):
     ''' 
@@ -18,7 +17,7 @@ def composer(bg_img, transformed_obj):
     return bg_img * (1-transformed_obj)
 
 # https://github.com/cheind/py-thin-plate-spline
-class STN_1(nn.Module):
+class STN_TPN(nn.Module):
     def __init__(self, ctrlshape = (6, 6)):
         super().__init__()
 
@@ -61,60 +60,8 @@ class STN_1(nn.Module):
         xt = F.grid_sample(foreground, grid)
         return xt
 
-# https://github.com/WarBean/tps_stn_pytorch
-class STN_2(nn.Module):
-    def __init__(self, span_range_height= 0.9, span_range_width=0.9, grid_height=6, grid_width=6):
-        super().__init__()
-        
-        r1 = span_range_height
-        r2 = span_range_width
-
-        target_control_points = torch.Tensor(list(itertools.product(
-            np.arange(-r1, r1 + 0.00001, 2.0  * r1 / (grid_height - 1)),
-            np.arange(-r2, r2 + 0.00001, 2.0  * r2 / (grid_width - 1)),
-        )))
-        Y, X = target_control_points.split(1, dim = 1)
-        target_control_points = torch.cat([X, Y], dim = 1)
-
-        # Spatial transformer localization-network
-        self.loc = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3),        
-            nn.MaxPool2d(2),
-            nn.ReLU(True),                           
-            nn.Conv2d(32, 64, kernel_size=3),       
-            nn.MaxPool2d(2),
-            nn.ReLU(True),                           
-            nn.Conv2d(64, 128, kernel_size=3),     
-            nn.MaxPool2d(2),
-            nn.ReLU(True)                         
-        )
-
-        # Regressor for the thin plate spline matrix
-        self.fc_loc = nn.Sequential(
-            nn.Linear(128*62*30, 512),
-            nn.ReLU(True),
-            nn.Linear(512, grid_height * grid_width * 2)
-        )
-
-        # Initialize the weights/bias
-        bias = target_control_points.view(-1)
-        self.fc_loc[2].bias.data.copy_(bias)
-        self.fc_loc[2].weight.data.fill_(0.0)
-
-        self.tps = TPSGridGen(256, 256, target_control_points)
-
-    def forward(self, background, foreground):
-        x = torch.cat((background, foreground), dim=3)
-        bs = x.shape[0]
-        x = self.loc(x)
-        source_control_points = self.fc_loc(x.view(x.shape[0], -1)).view(bs, -1, 2)
-        source_coordinate = self.tps(source_control_points)
-        grid = source_coordinate.view(bs, 256, 256, 2)
-        xt = F.grid_sample(foreground, grid)
-        return xt
-
 # Pytorch affine STN : https://pytorch.org/tutorials/intermediate/spatial_transformer_tutorial.html
-class STN_3(nn.Module):
+class STN_AFFINE(nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -152,13 +99,10 @@ class STN_3(nn.Module):
         return xt
 
 class GeometrySynthesizer(nn.Module):
-    def __init__(self, type=1):
+    def __init__(self):
         super().__init__()
-        if type == 1:
-            self.stn_tpn = STN_1()
-        elif type == 2:
-            self.stn_tpn = STN_2()
-        self.stn_affine = STN_3()
+        self.stn_tpn = STN_TPN()
+        self.stn_affine = STN_AFFINE()
 
     def forward(self, background, foreground):
         affine_transformed_foreground = self.stn_affine(background, foreground)
