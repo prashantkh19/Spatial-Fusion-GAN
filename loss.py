@@ -14,3 +14,4 @@ criterion_cycle = nn.L1Loss()
 criterion_identity = nn.L1Loss()
 
 criterion_discriminator = nn.MSELoss()
+criterion_generator = nn.MSELoss()

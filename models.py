@@ -8,6 +8,7 @@ from torch.autograd import Variable
 import tps
 from cv2.ximgproc import guidedFilter
 import torchvision.transforms as transforms
+import PIL
 
 def composer(bg_img, transformed_obj):
     ''' 
@@ -169,12 +170,12 @@ class Generator(nn.Module):
                     nn.Tanh() ]
 
         self.model = nn.Sequential(*model)
-        self.filter = GuidedFilter(radius=7)
+        self.filter = GuidedFilter(7, 1.3)
 
     def forward(self, x):
         y = self.model(x)
-        return y
-        # return self.filter(y, x)
+        # return y
+        return self.filter(y, x)
 
 class Discriminator(nn.Module):
     '''
@@ -221,9 +222,10 @@ class GuidedFilter(nn.Module):
     '''
     Kaiming He Guided Filter
     '''
-    def __init__(self, radius):
+    def __init__(self, radius=4, eps=0.02):
         super().__init__()
         self.radius = radius
+        self.eps = eps
 
     def forward(self, I, R):
         '''I is the Generated Image from G1, to be filtered
@@ -235,11 +237,14 @@ class GuidedFilter(nn.Module):
         bs = I.shape[0]
         res = []
         for j in range(bs):
-            i = to_image(I[j])
-            r = to_image(R[j])
-            filtered = to_tensor(guidedFilter(guide=r, src=i, radius = self.radius, eps= 1.3))
+            i = np.asarray(to_image(I[j].cpu()))
+            r = np.asarray(to_image(R[j].cpu()))
+            filtered = to_tensor(PIL.Image.fromarray(guidedFilter(guide=r, src=i, radius = self.radius, eps = self.eps)))
             res.append(filtered[None])
-        return torch.cat(res, dim=0)
+        res = torch.cat(res, dim=0)
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        res = res.to(device)
+        return res
 
 
 
