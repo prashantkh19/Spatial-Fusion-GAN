@@ -74,11 +74,14 @@ class TextUtils:
             if jumpsize <= 1:
                 break
 
-        mask = Image.new('1', shape)
+        # mask = Image.new('RGB', shape, color = (255, 255, 255))
+        # mask = Image.new('1', shape, color = (255, 255, 255))
+        mask = Image.new('RGB', shape)
         draw = ImageDraw.Draw(mask)
         y = (shape[0] - font.getsize(word)[0])/2
         x = (shape[1] - font.getsize(word)[1])/2
-        draw.text((y, x), word, font=font, fill='#ffffff')
+        draw.text((y, x), word, font=font, fill='#4DFED1')
+        # draw.text((y, x), word, font=font, fill='#ffffff')
         return self.transform(mask)
 
     def get_text_masks(self, bs, shape=(256, 256), img_fraction=0.8):

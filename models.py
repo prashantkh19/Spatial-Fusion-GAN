@@ -15,7 +15,11 @@ def composer(bg_img, transformed_obj):
     input shape = (N, C, H, W)
     transformed_obj - (N, 1, H, W)
     '''
-    return bg_img * (1-transformed_obj)
+    indexes = transformed_obj.data > 0 
+    # composed = bg_img * (1-transformed_obj)
+    composed = bg_img.clone()
+    composed[indexes] = transformed_obj[indexes]
+    return composed
 
 # https://github.com/cheind/py-thin-plate-spline
 class STN_TPN(nn.Module):
@@ -108,7 +112,7 @@ class GeometrySynthesizer(nn.Module):
     def forward(self, background, foreground):
         affine_transformed_foreground = self.stn_affine(background, foreground)
         tpn_transformed_foreground = self.stn_tpn(background, affine_transformed_foreground)
-        composed = composer(background, tpn_transformed_foreground)
+        composed = composer(background, affine_transformed_foreground)
         return composed
 
 class ResidualBlock(nn.Module):
@@ -174,8 +178,8 @@ class Generator(nn.Module):
 
     def forward(self, x):
         y = self.model(x)
-        # return y
-        return self.filter(y, x)
+        return y
+        # return self.filter(y, x)
 
 class Discriminator(nn.Module):
     '''

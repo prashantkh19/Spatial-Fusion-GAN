@@ -28,7 +28,7 @@ def load_AS_ckp(checkpoint_fpath, G1, D1, G2, D2, optimizer_G, optimizer_D1, opt
     G2.load_state_dict(checkpoint['state_dict']['G2'])
     D1.load_state_dict(checkpoint['state_dict']['D1'])
     D2.load_state_dict(checkpoint['state_dict']['D2'])
-    optimizer_G1.load_state_dict(checkpoint['optimizer']['G'])
+    optimizer_G.load_state_dict(checkpoint['optimizer']['G'])
     optimizer_D1.load_state_dict(checkpoint['optimizer']['D1'])
     optimizer_D2.load_state_dict(checkpoint['optimizer']['D2'])
     return checkpoint['epoch'], G1, D1, G2, D2, optimizer_G, optimizer_D1, optimizer_D2
@@ -38,6 +38,18 @@ def load_G0_ckp(checkpoint_fpath, G0):
     G0.load_state_dict(checkpoint['state_dict']['G0'])
     return G0
 
+def load_ckp(checkpoint_fpath, G0, G1, D1, G2, D2, optimizer_G0, optimizer_G, optimizer_D1, optimizer_D2):
+    checkpoint = torch.load(checkpoint_fpath)
+    G0.load_state_dict(checkpoint['state_dict']['G0'])
+    G1.load_state_dict(checkpoint['state_dict']['G1'])
+    G2.load_state_dict(checkpoint['state_dict']['G2'])
+    D1.load_state_dict(checkpoint['state_dict']['D1'])
+    D2.load_state_dict(checkpoint['state_dict']['D2'])
+    optimizer_G0.load_state_dict(checkpoint['optimizer']['G0'])
+    optimizer_G.load_state_dict(checkpoint['optimizer']['G'])
+    optimizer_D1.load_state_dict(checkpoint['optimizer']['D1'])
+    optimizer_D2.load_state_dict(checkpoint['optimizer']['D2'])
+    return checkpoint['epoch'], G0, G1, D1, G2, D2, optimizer_G0, optimizer_G, optimizer_D1, optimizer_D2
 
 def tensor2image(tensor):
     image = 127.5*(tensor[0].cpu().float().detach().numpy() + 1.0)

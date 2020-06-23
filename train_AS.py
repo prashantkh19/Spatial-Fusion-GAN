@@ -51,14 +51,12 @@ def train(opt):
     optimizer_D1 = torch.optim.Adam(D1.parameters(), lr=opt.lr, betas=(0.5, 0.999))
     optimizer_D2 = torch.optim.Adam(D2.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
-    if opt.G0_checkpoint is None:
-        print("Trained G0 is required... exiting..")
-        exit(0)
-    G0 = load_G0_ckp(opt.G0_checkpoint, G0)
+    if opt.G0_checkpoint is not None:
+        G0 = load_G0_ckp(opt.G0_checkpoint, G0)
 
     if opt.resume_checkpoint is not None:
         opt.epoch, G1, D1, G2, D2, optimizer_G, optimizer_D1, optimizer_D2 = load_AS_ckp(opt.resume_checkpoint, G1, D1, G2, D2, optimizer_G, optimizer_D1, optimizer_D2) 
-
+    
     lr_scheduler_G = torch.optim.lr_scheduler.LambdaLR(optimizer_G, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
     lr_scheduler_D1 = torch.optim.lr_scheduler.LambdaLR(optimizer_D1, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
     lr_scheduler_D2 = torch.optim.lr_scheduler.LambdaLR(optimizer_D2, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
